@@ -8,6 +8,7 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 from azure.storage.blob import BlobServiceClient
 from cryptography.fernet import Fernet
+from tkinter import messagebox
 
 # ======== โหลด ENV =========
 load_dotenv(dotenv_path="config.env")
@@ -83,7 +84,7 @@ def wait_for_file_ready(filepath, timeout=15):
             pass
         time.sleep(0.5)
     return False
-##
+
 # ======== Upload to Azure =========
 def upload_to_blob(filepath):
     try:
@@ -126,7 +127,6 @@ class UploadHandler(FileSystemEventHandler):
                 logger.warning(f"[SKIP] ไฟล์ {filename} ยังไม่พร้อมใช้งาน")
                 return
 
-            # 🔐 เข้ารหัสก่อนอัปโหลด
             key = load_key()
             encrypted_path = encrypt_file(filepath, key)
             encrypted_filename = os.path.basename(encrypted_path)
@@ -147,32 +147,13 @@ class UploadHandler(FileSystemEventHandler):
                 sftp.close()
                 transport.close()
 
-                # 📤 Upload to Azure + log
                 log_upload(encrypted_path)
 
             except Exception as e:
                 logger.error(f"[ERROR] อัปโหลดล้มเหลว: {encrypted_filename} | {e}")
                 logger.debug(f"[DEBUG] path: {encrypted_path}")
-#============== Handle download ==========
-def handle_download():
-    fname = entry_var.get().strip()
-    if not fname:
-        messagebox.showwarning("กรุณาใส่ชื่อไฟล์", "โปรดใส่ชื่อไฟล์ที่ต้องการดาวน์โหลด")
-        return
 
-    result = download_from_sftp(fname)
-    if result:
-        key = load_key()
-        decrypted = decrypt_file(result, key)
-        if decrypted:
-            messagebox.showinfo("สำเร็จ", f"✅ ดาวน์โหลดและถอดรหัสแล้ว:\n{os.path.basename(decrypted)}")
-        else:
-            messagebox.showerror("ล้มเหลว", f"❌ ถอดรหัสไฟล์ไม่สำเร็จ:\n{fname}")
-    else:
-        messagebox.showerror("ล้มเหลว", f"❌ ดาวน์โหลดไฟล์ไม่สำเร็จ: {fname}")
-
-
-#==========Download files ===========
+# ======== Download from SFTP =========
 def download_from_sftp(filename, save_to="downloads"):
     try:
         if not os.path.exists(save_to):
@@ -195,8 +176,8 @@ def download_from_sftp(filename, save_to="downloads"):
     except Exception as e:
         logger.error(f"❌ ดาวน์โหลดล้มเหลว: {filename} | {e}")
         return None
- 
-#========= Decrypt files ===========
+
+# ======== Decrypt file =========
 def decrypt_file(filepath, key):
     try:
         fernet = Fernet(key)
@@ -213,19 +194,3 @@ def decrypt_file(filepath, key):
     except Exception as e:
         logger.error(f"❌ ถอดรหัสล้มเหลว: {e}")
         return None
-
-# ======== Start main watcher =========
-if __name__ == "__main__":
-    print(f"🟢 เริ่มตรวจสอบโฟลเดอร์: {WATCH_FOLDER}")
-    logger.info("🎬 เริ่มระบบ Watch + Encryption + Upload")
-    event_handler = UploadHandler()
-    observer = Observer()
-    observer.schedule(event_handler, path=WATCH_FOLDER, recursive=False)
-    observer.start()
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-    observer.join()

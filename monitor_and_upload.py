@@ -15,7 +15,7 @@ SFTP_HOST = os.getenv("SFTP_HOST")
 SFTP_PORT = int(os.getenv("SFTP_PORT", 22))
 SFTP_USER = os.getenv("SFTP_USER")
 SFTP_PASS = os.getenv("SFTP_PASS")
-REMOTE_DIR = "/C:/Users/boat_/sftp-files"
+REMOTE_DIR = "./COOP"
 WATCH_FOLDER = "C:/Users/Boat_/Downloads/watch_folder"
 AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")
 AZURE_CONTAINER_NAME = os.getenv("AZURE_CONTAINER_NAME")
@@ -153,6 +153,66 @@ class UploadHandler(FileSystemEventHandler):
             except Exception as e:
                 logger.error(f"[ERROR] อัปโหลดล้มเหลว: {encrypted_filename} | {e}")
                 logger.debug(f"[DEBUG] path: {encrypted_path}")
+#============== Handle download ==========
+def handle_download():
+    fname = entry_var.get().strip()
+    if not fname:
+        messagebox.showwarning("กรุณาใส่ชื่อไฟล์", "โปรดใส่ชื่อไฟล์ที่ต้องการดาวน์โหลด")
+        return
+
+    result = download_from_sftp(fname)
+    if result:
+        key = load_key()
+        decrypted = decrypt_file(result, key)
+        if decrypted:
+            messagebox.showinfo("สำเร็จ", f"✅ ดาวน์โหลดและถอดรหัสแล้ว:\n{os.path.basename(decrypted)}")
+        else:
+            messagebox.showerror("ล้มเหลว", f"❌ ถอดรหัสไฟล์ไม่สำเร็จ:\n{fname}")
+    else:
+        messagebox.showerror("ล้มเหลว", f"❌ ดาวน์โหลดไฟล์ไม่สำเร็จ: {fname}")
+
+
+#==========Download files ===========
+def download_from_sftp(filename, save_to="downloads"):
+    try:
+        if not os.path.exists(save_to):
+            os.makedirs(save_to)
+
+        transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
+        transport.connect(username=SFTP_USER, password=SFTP_PASS)
+        sftp = paramiko.SFTPClient.from_transport(transport)
+
+        remote_path = os.path.join(REMOTE_DIR, filename).replace("\\", "/")
+        local_path = os.path.join(save_to, filename)
+
+        sftp.get(remote_path, local_path)
+        sftp.close()
+        transport.close()
+
+        logger.info(f"✅ ดาวน์โหลดไฟล์สำเร็จ: {filename}")
+        return local_path
+
+    except Exception as e:
+        logger.error(f"❌ ดาวน์โหลดล้มเหลว: {filename} | {e}")
+        return None
+ 
+#========= Decrypt files ===========
+def decrypt_file(filepath, key):
+    try:
+        fernet = Fernet(key)
+        with open(filepath, "rb") as enc_file:
+            encrypted = enc_file.read()
+        decrypted = fernet.decrypt(encrypted)
+
+        output_path = filepath[:-4] if filepath.endswith(".enc") else filepath + ".dec"
+        with open(output_path, "wb") as dec_file:
+            dec_file.write(decrypted)
+
+        logger.info(f"✅ ถอดรหัสแล้ว: {os.path.basename(filepath)} → {os.path.basename(output_path)}")
+        return output_path
+    except Exception as e:
+        logger.error(f"❌ ถอดรหัสล้มเหลว: {e}")
+        return None
 
 # ======== Start main watcher =========
 if __name__ == "__main__":
